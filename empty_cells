@@ -1,0 +1,36 @@
+#!/bin/bash
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <filename> <delimiter>"
+    exit 1
+fi
+
+file="$1"
+delimiter="$2"
+
+# 获取列标题
+IFS= read -r header < "$file"
+IFS="$delimiter" read -ra columns <<< "$header"
+
+# 初始化计数器数组
+declare -a counts
+for ((i=0; i<${#columns[@]}; i++)); do
+    counts[i]=0
+done
+
+# 用重定向方式读取文件，避免子shell丢失 counts 数组更新
+{
+  read  # skip header
+  while IFS="$delimiter" read -ra fields; do
+      for ((i=0; i<${#columns[@]}; i++)); do
+          if [[ -z "${fields[i]// }" ]]; then
+              counts[i]=$((counts[i]+1))
+          fi
+      done
+  done
+} < "$file"
+
+# 打印结果
+for ((i=0; i<${#columns[@]}; i++)); do
+    echo "${columns[i]}: ${counts[i]}"
+done

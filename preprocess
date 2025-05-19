@@ -1,0 +1,50 @@
+#!/bin/bash
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <input_file>"
+    exit 1
+fi
+
+infile="$1"
+outfile="cleaned_$(basename "$infile" .csv).tsv"
+
+# 提取最大 ID（跳过空的）
+max_id=$(awk -F";" 'NR > 1 && $1 ~ /^[0-9]+$/ { if ($1 > max) max = $1 } END { print max+1 }' "$infile")
+id_counter=$max_id
+
+{
+    # 读取头部
+    IFS= read -r header
+    echo "$header" | tr ';' '\t'
+
+    # 读取数据行
+    while IFS= read -r line; do
+        # 删除 、非 ASCII 字符，只保留标准字符
+        line_clean=$(echo "$line" | tr -d '\r' | tr -cd '\11\12\15\40-\176')
+
+        # 精准替换小数点（仅限数字列），使用 awk 处理每列
+        line_clean=$(echo "$line_clean" | awk -F';' '{
+            OFS=";";
+            for (i=1; i<=NF; i++) {
+                if ($i ~ /^[0-9]+,[0-9]+$/) {
+                    gsub(",", ".", $i)
+                }
+            }
+            print
+        }')
+
+        # 替换分隔符 ; 为 tab
+        clean_line=$(echo "$line_clean" | tr ';' '\t')
+
+        # 检查第一个字段（ID）是否为空
+        id_field=$(echo "$clean_line" | cut -f1)
+        if [[ -z "$id_field" ]]; then
+            clean_line="${id_counter}\t$(echo "$clean_line" | cut -f2-)"
+            id_counter=$((id_counter+1))
+        fi
+
+        echo -e "$clean_line"
+    done
+} < "$infile" > "$outfile"
+
+echo "Cleaned output saved to $outfile"

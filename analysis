@@ -1,0 +1,55 @@
+#!/bin/bash
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <cleaned_tsv_file>"
+    exit 1
+fi
+
+infile="$1"
+
+if [[ "$infile" != *.tsv ]]; then
+    echo "Error: Input file must be a .tsv cleaned file"
+    exit 1
+fi
+
+# 正确拆分 Mechanics 和 Domains（只按逗号，不拆空格），统计最多的
+most_mechanics=$(tail -n +2 "$infile" | cut -f13 | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | sort | uniq -c | sort -nr | head -1)
+most_domains=$(tail -n +2 "$infile" | cut -f14 | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | sort | uniq -c | sort -nr | head -1)
+
+# 提取用于相关性分析的列：出版年、复杂度、评分
+awk -F'\t' 'NR>1 && $3 != "" && $9 != "" { print $3 > "year.tmp"; print $9 > "rating.tmp" }' "$infile"
+awk -F'\t' 'NR>1 && $11 != "" && $9 != "" { print $11 > "complexity.tmp"; print $9 > "rating2.tmp" }' "$infile"
+
+# 皮尔逊相关性计算函数
+calc_corr() {
+    paste "$1" "$2" | awk '
+    {
+        x = $1; y = $2;
+        sx += x; sy += y;
+        sxx += x*x; syy += y*y;
+        sxy += x*y; n += 1;
+    }
+    END {
+        r = (n*sxy - sx*sy) / sqrt((n*sxx - sx*sx)*(n*syy - sy*sy));
+        printf "%.3f\n", r
+    }'
+}
+
+corr_year_rating=$(calc_corr year.tmp rating.tmp)
+corr_complexity_rating=$(calc_corr complexity.tmp rating2.tmp)
+
+# 清理临时文件
+rm -f year.tmp rating.tmp complexity.tmp rating2.tmp
+
+# 输出结果
+mechanics_count=$(echo "$most_mechanics" | awk '{print $1}')
+mechanics_name=$(echo "$most_mechanics" | cut -d' ' -f2-)
+
+domains_count=$(echo "$most_domains" | awk '{print $1}')
+domains_name=$(echo "$most_domains" | cut -d' ' -f2-)
+
+echo "The most popular game mechanics is $mechanics_name found in $mechanics_count games"
+echo "The most game domain is $domains_name found in $domains_count games"
+echo "The correlation between the year of publication and the average rating is $corr_year_rating"
+echo "The correlation between the complexity of a game and its average rating is $corr_complexity_rating"
+
